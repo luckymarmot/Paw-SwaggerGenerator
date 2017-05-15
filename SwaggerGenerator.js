@@ -13193,14 +13193,42 @@ methods.updateHostKeyWithLongestCommonPathname = function (_ref4, key) {
 };
 
 /**
+ * converts a PawRequest into an array of entries of size 1 where the key is the extracted origin of
+ * the urlBase of the requests.
+ * @param {Array<PawRequest>} request: the requests to group by host
+ * @returns {Array<Entry<string, PawRequest>>} the corresponding sequence of entries.
+ */
+methods.convertSingleRequestIntoRequestEntry = function (request) {
+  var baseUrl = request.getUrlBase();
+  var numberOfSlashes = (0, _url.parse)(baseUrl).slashes ? 3 : 1;
+  var origin = baseUrl.split('/').slice(0, numberOfSlashes).join('/');
+  return [{ key: origin, value: request }];
+};
+
+/**
+ * converts an array of PawRequests into an array of entries where the keys are the urlBase of the
+ * requests, except if there is only one request.
+ * @param {Array<PawRequest>} requests: the requests to group by host
+ * @returns {Array<Entry<string, PawRequest>>} the corresponding sequence of entries.
+ */
+methods.convertRequestsIntoRequestEntries = function (requests) {
+  if (requests.length === 1) {
+    return methods.convertSingleRequestIntoRequestEntry(requests[0]);
+  }
+
+  return requests.map(function (request) {
+    return { key: request.getUrlBase(), value: request };
+  });
+};
+
+/**
  * extracts common hosts from a list of requests, and assigns each request to its corresponding host
  * @param {Array<PawRequest>} requests: the requests to group by host
  * @returns {Seq<Entry<string, *>>} the corresponding sequence of entries.
  */
 methods.extractCommonHostsFromRequests = function (requests) {
-  var hosts = requests.map(function (request) {
-    return { key: request.getUrlBase(), value: request };
-  }).reduce(methods.addHostEntryToHostMap, {});
+  var requestEntries = methods.convertRequestsIntoRequestEntries(requests);
+  var hosts = requestEntries.reduce(methods.addHostEntryToHostMap, {});
 
   return new _immutable.OrderedMap(hosts).map(methods.updateHostKeyWithLongestCommonPathname).valueSeq();
 };
@@ -13769,10 +13797,13 @@ methods.convertRequestVariableDVIntoParameter = function (request, location, con
 
   var name = variable.name,
       value = variable.value,
+      required = variable.required,
       schema = variable.schema,
       type = variable.type,
       description = variable.description;
 
+
+  var defaultValue = typeof (schema || {}).default !== 'undefined' ? schema.default : value.getEvaluatedString();
 
   var param = new _Parameter2.default({
     in: location,
@@ -13780,7 +13811,8 @@ methods.convertRequestVariableDVIntoParameter = function (request, location, con
     name: name || paramName,
     type: type || 'string',
     description: description || null,
-    default: value.getEvaluatedString(),
+    required: required || false,
+    default: defaultValue,
     constraints: (0, _immutable.List)([new _Constraint2.default.JSONSchema(schema)]),
     applicableContexts: contexts
   });
@@ -15299,7 +15331,7 @@ methods.isBodyParameter = function (parameter) {
 
   var isUrlEncoded = parameter.isValid(new _Parameter2.default({
     key: 'Content-Type',
-    default: 'multipart/form-data'
+    default: 'application/x-www-form-urlencoded'
   }));
 
   return !isFormData && !isUrlEncoded;
@@ -15526,6 +15558,11 @@ methods.getTagDefinitions = function (api) {
  */
 methods.getPathFromResource = function (resource) {
   var path = resource.get('path').toURLObject((0, _immutable.List)(['{', '}'])).pathname;
+
+  if (path[0] !== '/') {
+    return '/' + path;
+  }
+
   return path;
 };
 
@@ -15932,7 +15969,8 @@ methods.convertRequestToOperationObject = function (store, _ref8, request, key) 
   }
 
   var value = operation;
-  return { key: key, value: value };
+  var method = request.get('method') || key;
+  return { key: method.toLowerCase(), value: value };
 };
 /* eslint-enable max-statements */
 
