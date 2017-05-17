@@ -16101,11 +16101,15 @@ methods.isProducesHeader = function (param) {
 methods.extractContentTypesFromParam = function (param) {
   var schema = param.getJSONSchema(false);
   if (schema.enum) {
-    return schema.enum;
+    return schema.enum.map(function (contentType) {
+      return contentType.split(';')[0];
+    });
   }
 
   if (schema.default) {
-    return [schema.default];
+    return [schema.default].map(function (contentType) {
+      return contentType.split(';')[0];
+    });
   }
 
   return [];
